@@ -5,7 +5,7 @@ use strict;
 
 =head1 NAME
 
-Net::CouchDb::Doc - Represent a CouchDb document
+Net::CouchDb::Document - Represent a CouchDb document
 
 =head1 VERSION
 

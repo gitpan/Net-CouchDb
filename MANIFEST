@@ -3,6 +3,7 @@ MANIFEST
 META.yml # Will be created by "make dist"
 Makefile.PL
 README
+TODO
 lib/Net/CouchDb.pm
 lib/Net/CouchDb/Database.pm
 lib/Net/CouchDb/Document.pm

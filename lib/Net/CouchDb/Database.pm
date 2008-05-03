@@ -19,11 +19,12 @@ our $VERSION = '0.01';
 
 Represents a single couchdb database.
 
-This should be created via Net::CouchDb.
 
 =head1 METHODS
 
-=head2 new
+=head2 new($couchdb, $database)
+
+This should be created via L<Net::CouchDb>'s database method.
 
 =cut
 
@@ -50,13 +51,16 @@ sub get {
 
   my $res = $self->call(GET => $uri, \%args);
 
-  if(exists $args{rev} && $res->{docs}) {
+  return $res unless $res and ref $res eq 'HASH';
+
+  if (exists $args{rev} && $res->{docs}) {
     my @docs =
       map { Net::CouchDb::Document->new($_->{_id}, $_) } @{$res->{docs}};
     return wantarray ? @docs : \@docs;
   }
 
-  return $res;
+  return Net::CouchDb::Document->new($res->{_id}, $res);
+
 }
 
 =head2 put($doc)
@@ -70,11 +74,14 @@ document inserted already has an id specified.)
 
 sub put {
   my($self, $doc) = @_;
+  $doc = $self->_make_doc($doc);
+  $self->{couchdb}->log(6, "Document before PUT", $doc);
   my $res = $self->call(PUT => $doc->id, $doc);
   if($res && $res->{ok}) {
     # Update the revision
-    $doc->_rev = $res->{_rev};
+    $doc->_rev = $res->{rev};
   }
+  $self->{couchdb}->log(6, "Document after PUT", $doc);
   return $res;
 }
 
@@ -86,6 +93,7 @@ Add or update a document.
 
 sub post {
   my($self, $doc, %args) = @_;
+  $doc = $self->_make_doc($doc);
   my $res = $self->call(POST => "", $doc);
   if($res && $res->{ok}) {
     # Update the revision
@@ -105,6 +113,18 @@ sub delete {
   my($self, $id) = @_;
   my $res = $self->call(DELETE => $id);
   return $res;
+}
+
+=head2 database_info
+
+Return the database information (doc_count, update_seq).
+
+=cut
+
+sub database_info {
+   my $self = shift;
+   my $res = $self->call(GET => "");
+   return $res;
 }
 
 =head2 all_docs
@@ -129,6 +149,13 @@ See L<Net::CouchDb::call> for parameters.
 sub call {
   my($self, $method, $uri, $data) = @_;
   return $self->{couchdb}->call($method, "$self->{database}/$uri", $data);
+}
+
+
+sub _make_doc {
+    my ($self, $doc) = @_;
+    $doc = Net::CouchDb::Document->new(undef, $doc) unless UNIVERSAL::isa($doc, 'Net::CouchDb::Document');
+    $doc;
 }
 
 =head1 AUTHOR

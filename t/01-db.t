@@ -1,17 +1,27 @@
 #!perl -T
+use strict;
+use warnings;
+
 use Test::More;
 use Net::CouchDb;
 
-my $couchdb = Net::CouchDb->new(host => "localhost", port => 8888);
+my $couchdb = Net::CouchDb->new(host => "localhost", port => 5984);
 
-my $dbs = $couchdb->all_dbs;
+$couchdb->debug($ENV{COUCH_DEBUG});
 
-if(!$dbs) {
+my $server_info = $couchdb->server_info;
+
+if(!$server_info) {
   plan skip_all => "Did not find couchdb, skipping live tests";
   exit;
 } else {
-  plan tests => 13;
+  plan tests => 18;
 }
+
+ok($server_info->{version}, "got version ($server_info->{version})");
+
+my $dbs = $couchdb->all_dbs;
+# TODO: check that the response is reasonable
 
 ok($couchdb->isa("Net::CouchDb"), "isa couchdb");
 
@@ -22,6 +32,9 @@ ok($couchdb->create_db($db_name), "create");
 my $db = $couchdb->db($db_name);
 ok($db->isa("Net::CouchDb::Database"), "isa database");
 
+ok(my $db_info = $db->database_info, "get database info");
+is($db_info->{doc_count}, 0, "document count is 0");
+
 my $doc = Net::CouchDb::Document->new("test1");
 
 ok($doc->isa("Net::CouchDb::Document"), "isa document");
@@ -31,24 +44,29 @@ $doc->test = "This is some testing text.";
 my $res = $db->put($doc);
 ok($res->{ok}, "Document inserted");
 
-ok($res->{_id} eq "test1", "Has Id $res->{_id}");
-ok($res->{_rev}, "Has rev $res->{_rev}");
+ok($res->{id} eq "test1", "Got id $res->{id}");
+ok($res->{rev}, "Got rev $res->{rev}");
 
 my $get = $db->get("test1");
 
-is_deeply($get, { %$doc, _rev => $res->{_rev} }, "Returned doc is the same");
+is_deeply($get, { %$doc, _rev => $res->{rev} }, "Returned doc is the same");
 
 $doc->foo = [qw(foo bar baz etc)];
 
 my $res2 = $db->put($doc);
 ok($res2->{ok}, "put updated");
 
-my($doc1) = $db->get($doc, rev => $res->{_rev});
-my($doc2) = $db->get($doc, rev => $res2->{_rev});
+ok(my ($doc1) = $db->get($doc, rev => $res->{rev}), "get doc1");
+ok(my ($doc2) = $db->get($doc, rev => $res2->{rev}), "get doc2");
 
-ok(!$doc1->{foo} && $doc1->{_rev} eq $res->{_rev}, "first revision");
-ok($doc2->{foo} && $doc2->{_rev} eq $res2->{_rev}, "second revision");
+ok(!$doc1->{foo} && $doc1->{_rev} eq $res->{rev}, "first revision");
+ok($doc2->{foo} && $doc2->{_rev} eq $res2->{rev}, "second revision");
 
-ok($couchdb->delete_db($db_name), "delete");
+ok(my $db_deleted = $couchdb->delete_db($db_name), "delete");
 ok(!(grep { $_ eq $db_name } $couchdb->all_dbs), "check delete");
 
+sub END {
+    return if $db_deleted;
+    eval { $couchdb->delete_db($db_name) };
+    #warn "END: $@" if $@;
+}

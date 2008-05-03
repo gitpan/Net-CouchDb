@@ -2,7 +2,7 @@ package Net::CouchDb;
 
 use warnings;
 use strict;
-use JSON::Any;
+use JSON qw(to_json from_json);
 use LWP::UserAgent;
 use CGI::Util qw(escape);
 use Net::CouchDb::Database;
@@ -18,7 +18,7 @@ Version 0.01
 
 =cut
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 =head1 SYNOPSIS
 
@@ -26,9 +26,10 @@ Provides an object oriented interface to the CouchDb REST/JSON API.
 
     use Net::CouchDb;
 
-    my $cdb = Net::CouchDb->new(host => "localhost", port => 8888);
+    my $cdb = Net::CouchDb->new(host => "localhost", port => 5984);
+    $cdb->debug(1);
     $cdb->create_db("test");
-    
+
     my $test = $cdb->db("test");
 
     my $doc = Net::CouchDb::Document->new;
@@ -46,15 +47,15 @@ Creates a new Net::CouchDb object. Takes the following parameters:
 
 =item *
 
-host: Hostname of server
+host: Hostname of server (defaults to localhost).
 
 =item *
 
-port: Port of server
+port: Port of server (defaults to 5984).
 
 =item *
 
-uri: Optionally specify a URI instead of host and port. (e.g. http://localhost:8888).
+uri: Optionally specify a URI instead of host and port. (e.g. http://localhost:5984).
 
 =item *
 
@@ -67,18 +68,22 @@ conn_cache: Optionally provide a LWP::ConnCache object to cache connections to C
 sub new {
   my($class, %args) = @_;
 
+  $args{host} ||= 'localhost';
+  $args{port} ||= 5984;
+
   $args{uri} ||= "http://$args{host}:$args{port}";
 
   my $ua = LWP::UserAgent->new;
   $ua->conn_cache($args{conn_cache}) if $args{conn_cache};
 
-  my $json = JSON::Any->new;
-
-  return bless {
+  my $self = bless {
     uri  => $args{uri},
     ua   => $ua,
-    json => $json
-  }, shift;
+  }, $class;
+
+  $self->debug($args{debug}) if $args{debug};
+
+  $self;
 }
 
 =head2 db
@@ -136,6 +141,50 @@ sub delete_db {
   return $res && $res->{ok};
 }
 
+=head2 server_info
+
+Returns a data structure with the information from the couchdb "/" URI
+(notably the version).
+
+=cut
+
+sub server_info {
+  my $self = shift;
+  my $res = $self->call(GET => '');
+  $res
+}
+
+=head2 debug
+
+Set or get the debug flag (defaults to 0, higher values gives more
+debug output).
+
+=cut
+
+sub debug {
+    my $self = shift;
+    if (@_) {
+        my $old_debug = $self->{debug};
+        $self->{debug} = shift;
+        if (!$old_debug and $self->{debug}) {
+            require Data::Dump;
+        }
+    }
+    $self->{debug} || 0;
+}
+
+=head2 log(debug_level, message, [message, ...])
+
+Log a debug message at C<debug_level>.
+
+=cut
+
+sub log {
+    my $self = shift;
+    return unless ($self->{debug} || 0 >= shift);
+    warn Data::Dump::dump(@_);
+}
+
 =head2 call($method, $uri, $data)
 
 Make a REST/JSON call. Normally you should use a more specific method,
@@ -178,12 +227,15 @@ sub call {
     my %data = %$data;
     # PUT shouldn't contain _id
     delete $data{_id} if $method eq 'PUT';
-    $req->content(JSON::Any->encode(\%data));
+    $req->content(to_json(\%data));
   }
   my $res = $self->{ua}->request($req);
 
+  $self->log(5, $res->content);
+
   # Just indicate error by returning undef.
-  my $obj = eval { JSON::Any->decode($res->content); };
+  my $obj = eval { from_json($res->content); };
+  warn "Error decoding content: $@" if $@;
 
   return wantarray ? ($res->status, $obj) : $obj;
 }
@@ -199,6 +251,11 @@ C<bug-net-couchdb at rt.cpan.org>, or through the web interface at
 L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Net-CouchDb>.
 I will be notified, and then you'll automatically be notified of progress on
 your bug as I make changes.
+
+=head1 DEVELOPMENT
+
+There is a git repository available at L<git://code.d.cx/Net-CouchDb>, which
+can be viewed at L<http://code.d.cx/?p=Net-CouchDb.git>.
 
 =head1 COPYRIGHT & LICENSE
 
