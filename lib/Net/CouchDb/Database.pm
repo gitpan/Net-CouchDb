@@ -7,18 +7,9 @@ use strict;
 
 Net::CouchDb::Database - Interface to a CouchDb database
 
-=head1 VERSION
-
-Version 0.01
-
-=cut
-
-our $VERSION = '0.01';
-
 =head1 SYNOPSIS
 
 Represents a single couchdb database.
-
 
 =head1 METHODS
 
@@ -41,6 +32,10 @@ sub new {
 Get a document with a specific ID, takes additional parameters for revision.
 
 If rev is provided returns a list of the specified revisions, 
+
+Will pass other parameters on to CouchDb, see
+L<http://wiki.apache.org/couchdb/HttpDocumentApi> for details of other
+parameters.
 
 =cut
 
@@ -97,10 +92,54 @@ sub post {
   my $res = $self->call(POST => "", $doc);
   if($res && $res->{ok}) {
     # Update the revision
-    $doc->_rev = $res->{_rev};
-    $doc->_id = $res->{_id} unless $doc->{_id};
+    $doc->{_rev} = $res->{rev};
+    $doc->{_id}  = $res->{id} unless $doc->{_id};
   }
   return $res;
+}
+
+=head2 new_doc([$fields])
+
+Create a new empty document in memory. Takes an optional hash reference with
+contents. Returns a L<Net::CouchDb::Document> object, which you should call
+the ->C<create> method on to actually insert the data.
+
+=head3 EXAMPLE
+
+  my $doc = $db->new_doc;
+  $doc->subject = "Test";
+  $doc->create or die "Failed to create";
+
+=cut
+
+sub new_doc {
+  my($self, $fields) = @_;
+  return Net::CouchDb::Document->new($fields, $self); # OK for fields to be undef
+}
+
+=head2 bulk_docs([$doc1, ..., $docN])
+
+Performs a bulk insert/update of all the documents referenced by the given array reference.
+
+Updates the revisions and ids in the given documents.
+
+(NB: this uses the new style bulk request, see
+L<http://wiki.apache.org/couchdb/HttpDocumentApi> for details.)
+
+=cut
+
+sub bulk_docs {
+  my($self, $docs) = @_;
+  my $res = $self->call(POST => "_bulk_docs", { docs => $docs });
+
+  return unless $res && $res->{ok};
+
+  for my $i(0 .. @$docs - 1) {
+    $docs->[$i]->{_id} = $res->{new_revs}->[$i]->{id};
+    $docs->[$i]->{_rev} = $res->{new_revs}->[$i]->{rev};
+  }
+
+  $res
 }
 
 =head2 delete($id)
@@ -115,6 +154,17 @@ sub delete {
   return $res;
 }
 
+=head2 uri
+
+Return the URI of this database.
+
+=cut
+
+sub uri {
+  my($self) = @_;
+  return $self->{couchdb}->uri . "/" . $self->{database};
+}
+
 =head2 database_info
 
 Return the database information (doc_count, update_seq).
@@ -122,9 +172,9 @@ Return the database information (doc_count, update_seq).
 =cut
 
 sub database_info {
-   my $self = shift;
-   my $res = $self->call(GET => "");
-   return $res;
+  my $self = shift;
+  my $res = $self->call(GET => "");
+  return $res;
 }
 
 =head2 all_docs
@@ -153,9 +203,9 @@ sub call {
 
 
 sub _make_doc {
-    my ($self, $doc) = @_;
-    $doc = Net::CouchDb::Document->new(undef, $doc) unless UNIVERSAL::isa($doc, 'Net::CouchDb::Document');
-    $doc;
+  my ($self, $doc) = @_;
+  $doc = Net::CouchDb::Document->new(undef, $doc) unless UNIVERSAL::isa($doc, 'Net::CouchDb::Document');
+  $doc;
 }
 
 =head1 AUTHOR

@@ -2,8 +2,7 @@ Net-CouchDb
 
 Provides a Perl interface to CouchDb (http://couchdb.com/).
 
-This module requires JSON::Any (and a JSON module), as well as
-libwww-perl (LWP).
+This module requires JSON 2, as well as libwww-perl (LWP).
 
 INSTALLATION
 

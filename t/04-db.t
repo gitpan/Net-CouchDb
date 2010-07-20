@@ -1,22 +1,15 @@
 #!perl -T
 use strict;
 use warnings;
+use lib qw(. t);
 
-use Test::More;
+use Test::More tests => 18;
 use Net::CouchDb;
+use MockCouch;
 
-my $couchdb = Net::CouchDb->new(host => "localhost", port => 5984);
-
-$couchdb->debug($ENV{COUCH_DEBUG});
+my $couchdb = MockCouch->new(host => "localhost", port => 5984);
 
 my $server_info = $couchdb->server_info;
-
-if(!$server_info) {
-  plan skip_all => "Did not find couchdb, skipping live tests";
-  exit;
-} else {
-  plan tests => 18;
-}
 
 ok($server_info->{version}, "got version ($server_info->{version})");
 
@@ -25,7 +18,7 @@ my $dbs = $couchdb->all_dbs;
 
 ok($couchdb->isa("Net::CouchDb"), "isa couchdb");
 
-my $db_name = "net-couchdb-test-$$-" . time;
+my $db_name = "net-couchdb-test";
 
 ok($couchdb->create_db($db_name), "create");
 
@@ -62,11 +55,6 @@ ok(my ($doc2) = $db->get($doc, rev => $res2->{rev}), "get doc2");
 ok(!$doc1->{foo} && $doc1->{_rev} eq $res->{rev}, "first revision");
 ok($doc2->{foo} && $doc2->{_rev} eq $res2->{rev}, "second revision");
 
-ok(my $db_deleted = $couchdb->delete_db($db_name), "delete");
+ok($couchdb->delete_db($db_name), "delete");
 ok(!(grep { $_ eq $db_name } $couchdb->all_dbs), "check delete");
 
-sub END {
-    return if $db_deleted;
-    eval { $couchdb->delete_db($db_name) };
-    #warn "END: $@" if $@;
-}

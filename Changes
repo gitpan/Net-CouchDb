@@ -1,5 +1,27 @@
 Revision history for Net-CouchDb
 
+0.04 - No longer maintained
+
+   Fix a few simple bugs anyway, but I no longer use this. Let me know if you'd
+   like maint., but really I'd recommend you use CouchDB::Client instead.
+
+   (I hate rt.cpan.org -- I didn't get an email about these bugs.)
+
+   Fixed:
+   - RT #49761: Missing dependency on Data::Dump
+   - RT #44804: POSTing a Document without setting an id fails (maybe same
+     issue as RT #44805, not sure)
+   - RT #46647: dies when call() is called in list context
+
+0.03 - ?? May 2008
+
+   Clean up API in places, to make it less verbose.
+
+   Add support for accessing attachments
+
+   Add support for bulk_docs.
+
+
 0.02 - 3 May 2008
 
    Following changes by Ask Bjoern Hansen:

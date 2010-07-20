@@ -2,23 +2,29 @@ package Net::CouchDb;
 
 use warnings;
 use strict;
+use Carp;
 use JSON qw(to_json from_json);
 use LWP::UserAgent;
+use LWP::ConnCache;
 use CGI::Util qw(escape);
 use Net::CouchDb::Database;
 use Net::CouchDb::Document;
+
+use constant DEBUG => $ENV{COUCH_DEBUG} || 0;
 
 =head1 NAME
 
 Net::CouchDb - Interface to CouchDb
 
-=head1 VERSION
-
-Version 0.01
-
 =cut
 
-our $VERSION = '0.02';
+our $VERSION = '0.04';
+
+=head1 NO LONGER MAINTAINED
+
+Please note this module is B<no longer maintained>. I recommend you use
+L<CouchDB::Client> instead (or L<AnyEvent::CouchDB> if that is closer to your
+needs).
 
 =head1 SYNOPSIS
 
@@ -32,10 +38,10 @@ Provides an object oriented interface to the CouchDb REST/JSON API.
 
     my $test = $cdb->db("test");
 
-    my $doc = Net::CouchDb::Document->new;
+    my $doc = $test->new_doc;
     $doc->colours = [qw(blue green orange)];
 
-    $test->put($doc);
+    $doc->create;
 
 =head1 METHODS
 
@@ -59,7 +65,9 @@ uri: Optionally specify a URI instead of host and port. (e.g. http://localhost:5
 
 =item *
 
-conn_cache: Optionally provide a LWP::ConnCache object to cache connections to CouchDb.
+conn_cache: Either provide a LWP::ConnCache object to cache connections to CouchDb,
+or set to 0 to disable connection caching. If not supplied Net::CouchDb will
+automatically use a per-instance cache.
 
 =back
 
@@ -74,14 +82,17 @@ sub new {
   $args{uri} ||= "http://$args{host}:$args{port}";
 
   my $ua = LWP::UserAgent->new;
-  $ua->conn_cache($args{conn_cache}) if $args{conn_cache};
+
+  # Default to a conncache unless set to 0 to disable.
+  $ua->conn_cache(exists $args{conn_cache} ? $args{conn_cache} : LWP::ConnCache->new)
+    unless exists $args{conn_cache} && !$args{conn_cache};
 
   my $self = bless {
     uri  => $args{uri},
     ua   => $ua,
   }, $class;
 
-  $self->debug($args{debug}) if $args{debug};
+  $self->debug(exists $args{debug} ? $args{debug} : DEBUG);
 
   $self;
 }
@@ -157,7 +168,9 @@ sub server_info {
 =head2 debug
 
 Set or get the debug flag (defaults to 0, higher values gives more
-debug output).
+debug output). This requires that the L<Data::Dump> module is installed.
+
+This can also be enabled via the C<COUCH_DEBUG> environment variable.
 
 =cut
 
@@ -181,8 +194,8 @@ Log a debug message at C<debug_level>.
 
 sub log {
     my $self = shift;
-    return unless ($self->{debug} || 0 >= shift);
-    warn Data::Dump::dump(@_);
+    return unless (($self->{debug} || 0) >= shift);
+    carp Data::Dump::dump(@_);
 }
 
 =head2 call($method, $uri, $data)
@@ -220,6 +233,8 @@ sub call {
       join ';', map { escape($_) . "=" . escape($data->{$_}) } keys %$data;
   }
 
+  $self->log(1, " -> $method $self->{uri}/$uri");
+
   my $req = HTTP::Request->new($method => "$self->{uri}/$uri");
 
   if(defined $data && $method ne 'GET') {
@@ -227,6 +242,9 @@ sub call {
     my %data = %$data;
     # PUT shouldn't contain _id
     delete $data{_id} if $method eq 'PUT';
+    # remove undef _id from POST
+    delete $data{_id} unless defined $data{_id};
+
     $req->content(to_json(\%data));
   }
   my $res = $self->{ua}->request($req);
@@ -234,10 +252,21 @@ sub call {
   $self->log(5, $res->content);
 
   # Just indicate error by returning undef.
-  my $obj = eval { from_json($res->content); };
+  my $obj = eval { $res->is_error ? undef : from_json($res->content); };
   warn "Error decoding content: $@" if $@;
 
-  return wantarray ? ($res->status, $obj) : $obj;
+  return wantarray ? ($res->code, $obj) : $obj;
+}
+
+=head2 uri
+
+Return the URI that this instance is pointing at.
+
+=cut
+
+sub uri {
+  my($self) = @_;
+  return $self->{uri};
 }
 
 =head1 AUTHOR
